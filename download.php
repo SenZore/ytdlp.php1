@@ -38,8 +38,14 @@ function getVideoInfo($url) {
     // Escape URL for shell command
     $escapedUrl = escapeshellarg($url);
     
-    // Get video info using yt-dlp
-    $command = YT_DLP_PATH . " --dump-json $escapedUrl 2>&1";
+    // Build yt-dlp command with cookies if available
+    $command = YT_DLP_PATH . " --dump-json";
+    if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
+        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
+        $command .= " --cookies $escapedCookies";
+    }
+    $command .= " $escapedUrl 2>&1";
+    
     $output = shell_exec($command);
     
     if (strpos($output, 'ERROR') !== false) {
@@ -119,7 +125,14 @@ function getAvailableFormats($url) {
     
     // Escape URL for shell command
     $escapedUrl = escapeshellarg($url);
-    $command = YT_DLP_PATH . " --list-formats $escapedUrl 2>&1";
+    
+    // Build yt-dlp command with cookies if available
+    $command = YT_DLP_PATH . " --list-formats";
+    if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
+        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
+        $command .= " --cookies $escapedCookies";
+    }
+    $command .= " $escapedUrl 2>&1";
     
     $output = shell_exec($command);
     
@@ -178,8 +191,13 @@ function streamDownload($url, $format, $type) {
     // Determine output format based on type
     $outputFormat = ($type === 'audio') ? 'mp3' : 'mp4';
     
-    // Build yt-dlp command for streaming
-    $command = YT_DLP_PATH . " --format $escapedFormat --output - $escapedUrl";
+    // Build yt-dlp command for streaming with cookies if available
+    $command = YT_DLP_PATH . " --format $escapedFormat --output -";
+    if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
+        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
+        $command .= " --cookies $escapedCookies";
+    }
+    $command .= " $escapedUrl";
     
     // Set headers for streaming
     header('Content-Type: application/octet-stream');
@@ -218,8 +236,13 @@ function downloadVideo($url, $format) {
     $escapedOutput = escapeshellarg($outputPath);
     $escapedUrl = escapeshellarg($url);
     
-    // Build yt-dlp command with progress
-    $command = YT_DLP_PATH . " --format $escapedFormat --output $escapedOutput --newline $escapedUrl 2>&1";
+    // Build yt-dlp command with progress and cookies if available
+    $command = YT_DLP_PATH . " --format $escapedFormat --output $escapedOutput --newline";
+    if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
+        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
+        $command .= " --cookies $escapedCookies";
+    }
+    $command .= " $escapedUrl 2>&1";
     
     // Execute command and capture output
     $output = [];
