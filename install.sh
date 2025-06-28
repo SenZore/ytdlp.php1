@@ -52,8 +52,7 @@ apt update && apt upgrade -y
 apt install -y software-properties-common lsb-release apt-transport-https ca-certificates
 add-apt-repository ppa:ondrej/php -y
 apt update
-apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3 python3 python3-pip ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban
-pip3 install --upgrade yt-dlp
+apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3 python3 python3-pip ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban python3-yt-dlp
 
 # --- 6. Create necessary directories ---
 mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
