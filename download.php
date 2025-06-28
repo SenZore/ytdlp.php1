@@ -4,6 +4,17 @@ session_start();
 
 // Include configuration and utility functions
 require_once 'config.php';
+require_once __DIR__ . '/vendor/autoload.php';
+
+use YoutubeDl\Options;
+use YoutubeDl\YoutubeDl;
+
+function getYoutubeDlInstance() {
+    $yt = new YoutubeDl();
+    // Set binary path if needed: $yt->setBinPath(YT_DLP_PATH);
+    $yt->setBinPath(YT_DLP_PATH);
+    return $yt;
+}
 
 // Handle AJAX requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -36,68 +47,43 @@ function getVideoInfo($url) {
         echo json_encode(['error' => 'Invalid URL']);
         return;
     }
-    $escapedUrl = escapeshellarg($url);
-    $command = YT_DLP_PATH . " --dump-json";
+    $yt = getYoutubeDlInstance();
+    $options = Options::create()
+        ->url($url)
+        ->noPlaylist(true)
+        ->dumpSingleJson(true);
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
-        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
-        $command .= " --cookies $escapedCookies";
+        $options = $options->cookies(YT_DLP_COOKIES);
     }
-    $command .= " $escapedUrl 2>&1";
-    $output = shell_exec($command);
-    if (strpos($output, 'ERROR') !== false || !$output) {
-        echo json_encode(['error' => 'Failed to fetch video info: ' . $output]);
-        return;
-    }
-    $videoData = json_decode($output, true);
-    if (!$videoData) {
-        echo json_encode(['error' => 'Failed to parse video information']);
-        return;
-    }
-    $formats = getFormatsFromVideoData($videoData);
-    $response = [
-        'title' => $videoData['title'] ?? 'Unknown',
-        'duration' => formatDuration($videoData['duration'] ?? 0),
-        'uploader' => $videoData['uploader'] ?? 'Unknown',
-        'view_count' => number_format($videoData['view_count'] ?? 0),
-        'formats' => $formats
-    ];
-    echo json_encode($response);
-}
-
-function getFormatsFromVideoData($videoData) {
-    $formats = [];
-    if (isset($videoData['formats'])) {
-        foreach ($videoData['formats'] as $format) {
+    try {
+        $collection = $yt->download($options);
+        $video = $collection->getVideos()[0];
+        if ($video->getError() !== null) {
+            echo json_encode(['error' => $video->getError()]);
+            return;
+        }
+        $formats = [];
+        foreach ($video->getFormats() as $format) {
             $formats[] = [
-                'id' => $format['format_id'] ?? '',
-                'extension' => $format['ext'] ?? '',
-                'resolution' => $format['resolution'] ?? 'Unknown',
-                'fps' => $format['fps'] ?? '',
-                'description' => $format['format_note'] ?? '',
-                'filesize' => $format['filesize'] ?? 0,
-                'vcodec' => $format['vcodec'] ?? '',
-                'acodec' => $format['acodec'] ?? ''
+                'id' => $format->getFormatId(),
+                'extension' => $format->getExt(),
+                'resolution' => $format->getResolution() ?? 'Unknown',
+                'fps' => $format->getFps(),
+                'description' => $format->getFormatNote(),
+                'filesize' => $format->getFilesize(),
+                'vcodec' => $format->getVcodec(),
+                'acodec' => $format->getAcodec()
             ];
         }
-    }
-    // Sort formats by resolution (highest first)
-    usort($formats, function($a, $b) {
-        $resA = intval(preg_replace('/[^0-9]/', '', $a['resolution']));
-        $resB = intval(preg_replace('/[^0-9]/', '', $b['resolution']));
-        return $resB - $resA;
-    });
-    return $formats;
-}
-
-function formatDuration($seconds) {
-    if ($seconds == 0) return 'Unknown';
-    $hours = floor($seconds / 3600);
-    $minutes = floor(($seconds % 3600) / 60);
-    $secs = $seconds % 60;
-    if ($hours > 0) {
-        return sprintf('%02d:%02d:%02d', $hours, $minutes, $secs);
-    } else {
-        return sprintf('%02d:%02d', $minutes, $secs);
+        echo json_encode([
+            'title' => $video->getTitle(),
+            'duration' => $video->getDuration(),
+            'uploader' => $video->getUploader(),
+            'view_count' => $video->getViewCount(),
+            'formats' => $formats
+        ]);
+    } catch (Exception $e) {
+        echo json_encode(['error' => $e->getMessage()]);
     }
 }
 
@@ -106,45 +92,33 @@ function getAvailableFormats($url) {
         echo json_encode(['error' => 'Invalid URL']);
         return;
     }
-    $escapedUrl = escapeshellarg($url);
-    $command = YT_DLP_PATH . " --list-formats";
+    $yt = getYoutubeDlInstance();
+    $options = Options::create()
+        ->url($url)
+        ->listFormats(true);
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
-        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
-        $command .= " --cookies $escapedCookies";
+        $options = $options->cookies(YT_DLP_COOKIES);
     }
-    $command .= " $escapedUrl 2>&1";
-    $output = shell_exec($command);
-    if (strpos($output, 'ERROR') !== false || !$output) {
-        echo json_encode(['error' => 'Failed to fetch formats: ' . $output]);
-        return;
-    }
-    $formats = [];
-    $lines = explode("\n", $output);
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if (empty($line) || strpos($line, 'ID') !== false) continue;
-        if (preg_match('/^(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/', $line, $matches)) {
-            $formatId = $matches[1];
-            $extension = $matches[2];
-            $resolution = $matches[3];
-            $fps = $matches[4];
-            $description = trim($matches[5]);
+    try {
+        $collection = $yt->download($options);
+        $video = $collection->getVideos()[0];
+        $formats = [];
+        foreach ($video->getFormats() as $format) {
             $formats[] = [
-                'id' => $formatId,
-                'extension' => $extension,
-                'resolution' => $resolution,
-                'fps' => $fps,
-                'description' => $description,
-                'display' => "$resolution $fps ($extension)"
+                'id' => $format->getFormatId(),
+                'extension' => $format->getExt(),
+                'resolution' => $format->getResolution() ?? 'Unknown',
+                'fps' => $format->getFps(),
+                'description' => $format->getFormatNote(),
+                'filesize' => $format->getFilesize(),
+                'vcodec' => $format->getVcodec(),
+                'acodec' => $format->getAcodec()
             ];
         }
+        echo json_encode(['formats' => $formats]);
+    } catch (Exception $e) {
+        echo json_encode(['error' => $e->getMessage()]);
     }
-    usort($formats, function($a, $b) {
-        $resA = intval(preg_replace('/[^0-9]/', '', $a['resolution']));
-        $resB = intval(preg_replace('/[^0-9]/', '', $b['resolution']));
-        return $resB - $resA;
-    });
-    echo json_encode(['formats' => $formats]);
 }
 
 function streamDownload($url, $format, $type) {
@@ -185,44 +159,31 @@ function downloadVideo($url, $format) {
         echo json_encode(['error' => 'Invalid URL']);
         return;
     }
-    $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', parse_url($url, PHP_URL_HOST));
-    $outputPath = DOWNLOAD_DIR . $filename . '_%(title)s.%(ext)s';
-    $escapedFormat = escapeshellarg($format);
-    $escapedOutput = escapeshellarg($outputPath);
-    $escapedUrl = escapeshellarg($url);
-    $command = YT_DLP_PATH . " --format $escapedFormat --output $escapedOutput --newline";
+    $yt = getYoutubeDlInstance();
+    $options = Options::create()
+        ->url($url)
+        ->downloadPath(DOWNLOAD_DIR)
+        ->format($format)
+        ->output('%(title)s.%(ext)s');
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
-        $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
-        $command .= " --cookies $escapedCookies";
+        $options = $options->cookies(YT_DLP_COOKIES);
     }
-    $command .= " $escapedUrl 2>&1";
-    $output = [];
-    $returnCode = 0;
-    exec($command, $output, $returnCode);
-    if ($returnCode !== 0) {
-        echo json_encode(['error' => 'Download failed: ' . implode("\n", $output)]);
-        return;
-    }
-    $files = glob(DOWNLOAD_DIR . '*');
-    $latestFile = null;
-    $latestTime = 0;
-    foreach ($files as $file) {
-        if (is_file($file) && filemtime($file) > $latestTime) {
-            $latestTime = filemtime($file);
-            $latestFile = $file;
+    try {
+        $collection = $yt->download($options);
+        $video = $collection->getVideos()[0];
+        if ($video->getError() !== null) {
+            echo json_encode(['error' => $video->getError()]);
+            return;
         }
-    }
-    if ($latestFile) {
-        $fileSize = filesize($latestFile);
-        $fileName = basename($latestFile);
+        $file = $video->getFile();
         echo json_encode([
             'success' => true,
-            'file' => $fileName,
-            'size' => formatBytes($fileSize),
-            'path' => $latestFile
+            'file' => $file ? $file->getFilename() : null,
+            'size' => $file ? formatBytes($file->getSize()) : null,
+            'path' => $file ? $file->getPathname() : null
         ]);
-    } else {
-        echo json_encode(['error' => 'Download completed but file not found']);
+    } catch (Exception $e) {
+        echo json_encode(['error' => $e->getMessage()]);
     }
 }
 
