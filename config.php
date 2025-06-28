@@ -21,6 +21,10 @@ define('YT_DLP_PATH', 'yt-dlp');
 define('YT_DLP_TIMEOUT', 300); // 5 minutes timeout
 define('YT_DLP_USER_AGENT', 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36');
 
+// Cookie Settings for authenticated downloads
+define('YT_DLP_COOKIES', '/var/www/yt-dlp/cookies.txt'); // Path to cookies file
+define('USE_COOKIES', file_exists('/var/www/yt-dlp/cookies.txt')); // Auto-detect if cookies exist
+
 // Security Settings
 define('ENABLE_RATE_LIMITING', true);
 define('ENABLE_FILE_VALIDATION', true);
