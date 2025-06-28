@@ -35,8 +35,12 @@ function downloadVideo($url, $format) {
     $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', parse_url($url, PHP_URL_HOST));
     $outputPath = DOWNLOAD_DIR . $filename . '_%(title)s.%(ext)s';
     
-    // Build yt-dlp command
-    $command = YT_DLP_PATH . " --format $format --output \"$outputPath\" \"$url\" 2>&1";
+    // Build yt-dlp command with cookies if available
+    $command = YT_DLP_PATH . " --format $format --output \"$outputPath\"";
+    if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
+        $command .= " --cookies \"" . YT_DLP_COOKIES . "\"";
+    }
+    $command .= " \"$url\" 2>&1";
     
     // Execute command
     $output = shell_exec($command);
@@ -49,7 +53,13 @@ function downloadVideo($url, $format) {
 }
 
 function getAvailableFormats($url) {
-    $command = YT_DLP_PATH . " --list-formats \"$url\" 2>&1";
+    // Build yt-dlp command with cookies if available
+    $command = YT_DLP_PATH . " --list-formats";
+    if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
+        $command .= " --cookies \"" . YT_DLP_COOKIES . "\"";
+    }
+    $command .= " \"$url\" 2>&1";
+    
     $output = shell_exec($command);
     
     $formats = [];
