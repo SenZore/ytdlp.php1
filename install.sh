@@ -18,11 +18,26 @@ read -p "Enter admin email for SSL: " ADMIN_EMAIL
 # Update system
 apt update && apt upgrade -y
 
-# Install dependencies
-apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-json php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3 python3 python3-pip ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban
+# Install core tools
+apt install -y software-properties-common lsb-release apt-transport-https ca-certificates
 
-# Install yt-dlp
+# Add PHP repository for latest PHP
+add-apt-repository ppa:ondrej/php -y
+apt update
+
+# Install PHP and extensions (php8.3-json is not needed)
+apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3
+
+# Install Python, pip, and yt-dlp
+apt install -y python3 python3-pip
 pip3 install --upgrade yt-dlp
+
+# Install other dependencies
+apt install -y ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban
+
+# Check and create Nginx directories if missing
+mkdir -p /etc/nginx/sites-available
+mkdir -p /etc/nginx/sites-enabled
 
 # Create web directory
 mkdir -p /var/www/yt-dlp
@@ -39,10 +54,13 @@ mkdir -p downloads temp logs
 chown -R www-data:www-data downloads temp logs
 
 # Configure PHP
-sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 2G/' /etc/php/8.3/fpm/php.ini
-sed -i 's/post_max_size = 8M/post_max_size = 2G/' /etc/php/8.3/fpm/php.ini
-sed -i 's/memory_limit = 128M/memory_limit = 512M/' /etc/php/8.3/fpm/php.ini
-sed -i 's/max_execution_time = 30/max_execution_time = 300/' /etc/php/8.3/fpm/php.ini
+PHP_INI="/etc/php/8.3/fpm/php.ini"
+if [ -f "$PHP_INI" ]; then
+  sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 2G/' $PHP_INI
+  sed -i 's/post_max_size = 8M/post_max_size = 2G/' $PHP_INI
+  sed -i 's/memory_limit = 128M/memory_limit = 512M/' $PHP_INI
+  sed -i 's/max_execution_time = 30/max_execution_time = 300/' $PHP_INI
+fi
 
 # Configure Nginx
 cat > /etc/nginx/sites-available/yt-dlp << 'EOF'
@@ -107,17 +125,42 @@ EOF
 ln -sf /etc/nginx/sites-available/yt-dlp /etc/nginx/sites-enabled/
 rm -f /etc/nginx/sites-enabled/default
 
-# Configure firewall
+# Configure firewall (allow ports manually if Nginx Full profile is missing)
 ufw --force enable
 ufw allow ssh
-ufw allow 'Nginx Full'
+ufw allow 80
+ufw allow 443
 
-# Start services
-systemctl enable nginx php8.3-fpm fail2ban
-systemctl restart nginx php8.3-fpm fail2ban
+# Start and enable services if installed
+for svc in nginx php8.3-fpm fail2ban; do
+  if systemctl list-unit-files | grep -q "${svc}.service"; then
+    systemctl enable $svc
+    systemctl restart $svc
+  else
+    echo "[WARNING] $svc.service not found, skipping."
+  fi
+done
 
-# Install SSL certificate
-certbot --nginx -d $DOMAIN_NAME --email $ADMIN_EMAIL --agree-tos --non-interactive
+# Check if domain resolves to this server's public IP
+SERVER_IP=$(curl -s https://api.ipify.org)
+DOMAIN_IP=$(dig +short $DOMAIN_NAME | tail -n1)
+
+if [[ "$SERVER_IP" != "$DOMAIN_IP" ]]; then
+  echo "❌ ERROR: Your domain ($DOMAIN_NAME) does not point to this server's IP ($SERVER_IP)."
+  echo "    Domain resolves to: $DOMAIN_IP"
+  echo "    Please update your DNS A record and try again."
+  exit 1
+else
+  echo "✅ Domain $DOMAIN_NAME resolves correctly to this server ($SERVER_IP)."
+fi
+
+# Install SSL certificate if certbot is available
+if command -v certbot &> /dev/null; then
+  certbot --nginx -d $DOMAIN_NAME --email $ADMIN_EMAIL --agree-tos --non-interactive || \
+    echo "[WARNING] Certbot failed. You may need to run it manually."
+else
+  echo "[WARNING] certbot not found, skipping SSL setup."
+fi
 
 # Create monitoring script
 cat > /usr/local/bin/yt-dlp-status.sh << 'EOF'
@@ -128,7 +171,7 @@ echo "ffmpeg: $(command -v ffmpeg && ffmpeg -version | head -n1 || echo 'Not ins
 echo "PHP: $(php -v | head -n1)"
 echo "Nginx: $(nginx -v 2>&1)"
 echo "Disk Usage: $(df / | awk 'NR==2 {print $5}')"
-echo "Memory Usage: $(free | awk 'NR==2{printf "%.1f%%", $3*100/$2}')"
+echo "Memory Usage: $(free | awk 'NR==2{printf \"%.1f%%\", $3*100/$2}')"
 EOF
 
 chmod +x /usr/local/bin/yt-dlp-status.sh
