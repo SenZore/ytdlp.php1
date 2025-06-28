@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Documentation
+README.md
+*.md
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+temp/
+*.tmp
+
+# Downloaded files
+downloads/
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Development files
+node_modules/
+vendor/
+composer.lock
+package-lock.json 
