@@ -52,24 +52,29 @@ apt update && apt upgrade -y
 apt install -y software-properties-common lsb-release apt-transport-https ca-certificates
 add-apt-repository ppa:ondrej/php -y
 apt update
-apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3 python3 python3-pip ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban python3-yt-dlp
+apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3 python3 python3-pip ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban
 
-# --- 6. Create necessary directories ---
+# --- 6. Install yt-dlp (standalone binary) ---
+echo "[INFO] Installing yt-dlp standalone binary..."
+curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+chmod a+rx /usr/local/bin/yt-dlp
+
+# --- 7. Create necessary directories ---
 mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
 mkdir -p /var/www/yt-dlp
 cd /var/www/yt-dlp
 mkdir -p downloads temp logs
 
-# --- 7. Download project files ---
+# --- 8. Download project files ---
 echo "📥 Downloading project files..."
 wget -qO- https://github.com/SenZore/ytdlp.php1/archive/main.tar.gz | tar -xz --strip-components=1
 
-# --- 8. Set permissions ---
+# --- 9. Set permissions ---
 chown -R www-data:www-data /var/www/yt-dlp
 chmod -R 755 /var/www/yt-dlp
 chown -R www-data:www-data downloads temp logs
 
-# --- 9. Configure PHP ---
+# --- 10. Configure PHP ---
 PHP_INI="/etc/php/8.3/fpm/php.ini"
 if [ -f "$PHP_INI" ]; then
   sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 2G/' $PHP_INI
@@ -78,7 +83,7 @@ if [ -f "$PHP_INI" ]; then
   sed -i 's/max_execution_time = 30/max_execution_time = 300/' $PHP_INI
 fi
 
-# --- 10. Configure Nginx site ---
+# --- 11. Configure Nginx site ---
 cat > /etc/nginx/sites-available/yt-dlp << EOF
 server {
     listen 80;
@@ -138,13 +143,13 @@ EOF
 ln -sf /etc/nginx/sites-available/yt-dlp /etc/nginx/sites-enabled/yt-dlp
 rm -f /etc/nginx/sites-enabled/default
 
-# --- 11. Configure firewall ---
+# --- 12. Configure firewall ---
 ufw --force enable
 ufw allow ssh
 ufw allow 80
 ufw allow 443
 
-# --- 12. Test and reload Nginx ---
+# --- 13. Test and reload Nginx ---
 echo "[INFO] Testing Nginx config..."
 if nginx -t; then
   echo "[SUCCESS] Nginx config is valid. Reloading nginx..."
@@ -155,7 +160,7 @@ else
   exit 1
 fi
 
-# --- 13. SSL with Certbot ---
+# --- 14. SSL with Certbot ---
 echo "[INFO] Verifying SSL setup..."
 if command -v certbot &> /dev/null; then
   certbot --nginx -d $DOMAIN_NAME --email $ADMIN_EMAIL --agree-tos --non-interactive || \
@@ -164,7 +169,7 @@ else
   echo "[WARNING] certbot not found, skipping SSL setup."
 fi
 
-# --- 14. Create monitoring script ---
+# --- 15. Create monitoring script ---
 cat > /usr/local/bin/yt-dlp-status.sh << 'EOF'
 #!/bin/bash
 echo "=== YT-DLP Service Status ==="
@@ -177,7 +182,7 @@ echo "Memory Usage: $(free | awk 'NR==2{printf \"%.1f%%\", $3*100/$2}')"
 EOF
 chmod +x /usr/local/bin/yt-dlp-status.sh
 
-# --- 15. Final output ---
+# --- 16. Final output ---
 echo "✅ Installation completed!"
 echo "🌐 Visit: https://$DOMAIN_NAME"
 echo "🔐 Admin: https://$DOMAIN_NAME/login.php"
