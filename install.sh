@@ -30,7 +30,7 @@ cd /var/www/yt-dlp
 
 # Download project files (replace with your actual GitHub repo URL)
 echo "📥 Downloading project files..."
-wget -qO- https://github.com/YOUR_USERNAME/yt-dlp-php/archive/main.tar.gz | tar -xz --strip-components=1
+wget -qO- https://github.com/SenZore/ytdlp.php1/archive/main.tar.gz | tar -xz --strip-components=1
 
 # Set permissions
 chown -R www-data:www-data /var/www/yt-dlp
