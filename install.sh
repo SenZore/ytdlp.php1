@@ -28,7 +28,7 @@ pip3 install --upgrade yt-dlp
 mkdir -p /var/www/yt-dlp
 cd /var/www/yt-dlp
 
-# Download project files (replace with your actual GitHub repo URL)
+# Download project files from SenZore's repository
 echo "📥 Downloading project files..."
 wget -qO- https://github.com/SenZore/ytdlp.php1/archive/main.tar.gz | tar -xz --strip-components=1
 
