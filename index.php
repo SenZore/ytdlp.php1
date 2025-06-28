@@ -2,7 +2,7 @@
 session_start();
 
 // catatan :v
-// Include configuration
+// Include configurations
 require_once 'config.php';
 
 // Get server status for display
@@ -481,37 +481,27 @@ function getAvailableFormats($url) {
                 <button type="submit" class="btn" id="checkBtn">Check Video</button>
             </form>
 
-            <div class="loading" id="loading">
+            <div class="loading" id="loading" style="display:none;">
                 <div class="spinner"></div>
                 <p>Checking video information... Please wait</p>
             </div>
 
-            <div class="video-info" id="videoInfo">
+            <div class="video-info" id="videoInfo" style="display:none;">
                 <h3>Video Information</h3>
-                <div class="video-details" id="videoDetails">
-                    <!-- Video details will be populated here -->
-                </div>
-
+                <div class="video-details" id="videoDetails"></div>
                 <div class="format-selection">
                     <div class="format-tabs">
                         <div class="format-tab active" data-format="video">Video (MP4)</div>
                         <div class="format-tab" data-format="audio">Audio (MP3)</div>
                     </div>
-
                     <div class="format-options active" id="videoFormats">
                         <h4>Available Video Qualities</h4>
-                        <div id="videoFormatList">
-                            <!-- Video formats will be populated here -->
-                        </div>
+                        <div id="videoFormatList"></div>
                     </div>
-
                     <div class="format-options" id="audioFormats">
                         <h4>Available Audio Qualities</h4>
-                        <div id="audioFormatList">
-                            <!-- Audio formats will be populated here -->
-                        </div>
+                        <div id="audioFormatList"></div>
                     </div>
-
                     <button type="button" class="btn secondary" id="downloadBtn" style="margin-top: 20px;">
                         Download Selected Format
                     </button>
@@ -541,59 +531,42 @@ function getAvailableFormats($url) {
             const downloadBtn = document.getElementById('downloadBtn');
             const formatTabs = document.querySelectorAll('.format-tab');
             const message = document.getElementById('message');
-
             let currentFormats = [];
             let selectedFormat = null;
-
-            // Format tab switching
             formatTabs.forEach(tab => {
                 tab.addEventListener('click', function() {
                     formatTabs.forEach(t => t.classList.remove('active'));
                     this.classList.add('active');
-                    
                     const format = this.dataset.format;
                     document.querySelectorAll('.format-options').forEach(opt => opt.classList.remove('active'));
                     document.getElementById(format + 'Formats').classList.add('active');
                 });
             });
-
-            // URL form submission
             urlForm.addEventListener('submit', function(e) {
                 e.preventDefault();
-                
                 const url = urlInput.value.trim();
                 if (!url) {
                     showMessage('Please enter a valid URL', 'error');
                     return;
                 }
-
-                // Show loading
                 loading.style.display = 'block';
                 videoInfo.style.display = 'none';
                 checkBtn.disabled = true;
                 checkBtn.textContent = 'Checking...';
-
-                // Get video info
-                const formData = new FormData();
-                formData.append('action', 'get_video_info');
-                formData.append('url', url);
-
                 fetch('download.php', {
                     method: 'POST',
-                    body: formData
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: 'action=get_video_info&url=' + encodeURIComponent(url)
                 })
                 .then(response => response.json())
                 .then(data => {
                     loading.style.display = 'none';
                     checkBtn.disabled = false;
                     checkBtn.textContent = 'Check Video';
-
                     if (data.error) {
                         showMessage(data.error, 'error');
                         return;
                     }
-
-                    // Display video info
                     displayVideoInfo(data);
                     currentFormats = data.formats;
                 })
@@ -604,72 +577,44 @@ function getAvailableFormats($url) {
                     showMessage('Network error: ' + error.message, 'error');
                 });
             });
-
-            // Download button
             downloadBtn.addEventListener('click', function() {
                 if (!selectedFormat) {
                     showMessage('Please select a format first', 'error');
                     return;
                 }
-
                 const url = urlInput.value.trim();
                 const activeTab = document.querySelector('.format-tab.active');
                 const formatType = activeTab.dataset.format;
-
-                // Start streaming download
                 const downloadUrl = `download.php?action=stream&url=${encodeURIComponent(url)}&format=${encodeURIComponent(selectedFormat)}&type=${formatType}`;
-                
-                // Create a temporary link and click it
                 const link = document.createElement('a');
                 link.href = downloadUrl;
                 link.download = 'download';
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-
                 showMessage('Download started! Check your browser downloads.', 'success');
             });
-
             function displayVideoInfo(data) {
-                // Display video details
                 videoDetails.innerHTML = `
-                    <div class="video-detail">
-                        <strong>Title:</strong><br>
-                        ${data.title || 'Unknown'}
-                    </div>
-                    <div class="video-detail">
-                        <strong>Duration:</strong><br>
-                        ${data.duration || 'Unknown'}
-                    </div>
-                    <div class="video-detail">
-                        <strong>Uploader:</strong><br>
-                        ${data.uploader || 'Unknown'}
-                    </div>
-                    <div class="video-detail">
-                        <strong>Views:</strong><br>
-                        ${data.view_count || 'Unknown'}
-                    </div>
+                    <div class="video-detail"><strong>Title:</strong><br>${data.title || 'Unknown'}</div>
+                    <div class="video-detail"><strong>Duration:</strong><br>${data.duration || 'Unknown'}</div>
+                    <div class="video-detail"><strong>Uploader:</strong><br>${data.uploader || 'Unknown'}</div>
+                    <div class="video-detail"><strong>Views:</strong><br>${data.view_count || 'Unknown'}</div>
                 `;
-
-                // Display video formats
-                const videoFormats = data.formats.filter(f => !f.description.includes('audio only'));
-                const audioFormats = data.formats.filter(f => f.description.includes('audio only'));
-
+                const videoFormatsArr = data.formats.filter(f => !f.description.includes('audio only'));
+                const audioFormatsArr = data.formats.filter(f => f.description.includes('audio only'));
                 videoFormatList.innerHTML = '';
-                videoFormats.forEach(format => {
+                videoFormatsArr.forEach(format => {
                     const option = createFormatOption(format, 'video');
                     videoFormatList.appendChild(option);
                 });
-
                 audioFormatList.innerHTML = '';
-                audioFormats.forEach(format => {
+                audioFormatsArr.forEach(format => {
                     const option = createFormatOption(format, 'audio');
                     audioFormatList.appendChild(option);
                 });
-
                 videoInfo.style.display = 'block';
             }
-
             function createFormatOption(format, type) {
                 const div = document.createElement('div');
                 div.className = 'format-option';
@@ -677,19 +622,15 @@ function getAvailableFormats($url) {
                     <span><strong>${format.resolution} ${format.fps}</strong></span>
                     <span class="format-details">${format.description}</span>
                 `;
-                
                 div.addEventListener('click', function() {
                     document.querySelectorAll('.format-option').forEach(opt => opt.classList.remove('selected'));
                     this.classList.add('selected');
                     selectedFormat = format.id;
                 });
-
                 return div;
             }
-
             function showMessage(text, type) {
                 message.innerHTML = `<div class="message ${type}">${text}</div>`;
-                
                 setTimeout(() => {
                     const messages = document.querySelectorAll('.message');
                     messages.forEach(msg => {
