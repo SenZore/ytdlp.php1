@@ -1,19 +1,37 @@
 #!/bin/bash
 
-# One-liner installation script for YT-DLP PHP Web Interface
-# Run this on your Ubuntu 24.04 VPS as root
+# YT-DLP PHP Web Interface Installation Script (for use with sudo su)
+# Run this as root (sudo su), do NOT use sudo inside this script
 
 echo "🚀 Installing YT-DLP PHP Web Interface..."
 
-# Check if running as root
-if [[ $EUID -ne 0 ]]; then
-   echo "❌ This script must be run as root"
-   exit 1
+# Prompt for domain and admin email at the very top
+read -p "Enter the URL (domain) where the website will be hosted (e.g., example.com): " DOMAIN_NAME
+read -p "Enter admin email for SSL: " ADMIN_EMAIL
+
+# Show detected server public IP
+SERVER_IP=$(curl -s https://api.ipify.org)
+echo "Detected server public IP: $SERVER_IP"
+
+# Check if domain resolves to this server's public IP
+DOMAIN_IP=$(dig +short $DOMAIN_NAME | tail -n1)
+
+if [[ -z "$DOMAIN_IP" ]]; then
+  echo "❌ ERROR: Your domain ($DOMAIN_NAME) does not resolve to any IP address."
+  echo "    Please update your DNS A record and try again."
+  exit 1
 fi
 
-# Get domain and email
-read -p "Enter your domain name (e.g., example.com): " DOMAIN_NAME
-read -p "Enter admin email for SSL: " ADMIN_EMAIL
+if [[ "$SERVER_IP" != "$DOMAIN_IP" ]]; then
+  echo "❌ ERROR: Your domain ($DOMAIN_NAME) does not point to this server's IP ($SERVER_IP)."
+  echo "    Domain resolves to: $DOMAIN_IP"
+  echo "    Please update your DNS A record and try again."
+  exit 1
+else
+  echo "✅ Domain $DOMAIN_NAME resolves correctly to this server ($SERVER_IP)."
+fi
+
+echo "Proceeding to SSL verification and installation..."
 
 # Update system
 apt update && apt upgrade -y
@@ -141,20 +159,8 @@ for svc in nginx php8.3-fpm fail2ban; do
   fi
 done
 
-# Check if domain resolves to this server's public IP
-SERVER_IP=$(curl -s https://api.ipify.org)
-DOMAIN_IP=$(dig +short $DOMAIN_NAME | tail -n1)
-
-if [[ "$SERVER_IP" != "$DOMAIN_IP" ]]; then
-  echo "❌ ERROR: Your domain ($DOMAIN_NAME) does not point to this server's IP ($SERVER_IP)."
-  echo "    Domain resolves to: $DOMAIN_IP"
-  echo "    Please update your DNS A record and try again."
-  exit 1
-else
-  echo "✅ Domain $DOMAIN_NAME resolves correctly to this server ($SERVER_IP)."
-fi
-
 # Install SSL certificate if certbot is available
+echo "Verifying SSL setup..."
 if command -v certbot &> /dev/null; then
   certbot --nginx -d $DOMAIN_NAME --email $ADMIN_EMAIL --agree-tos --non-interactive || \
     echo "[WARNING] Certbot failed. You may need to run it manually."
