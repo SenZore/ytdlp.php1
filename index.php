@@ -1,6 +1,7 @@
 <?php
 session_start();
 
+// catatan :v
 // Include configuration
 require_once 'config.php';
 
