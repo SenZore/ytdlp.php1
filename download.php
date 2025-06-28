@@ -2,7 +2,7 @@
 header('Content-Type: application/json');
 session_start();
 
-// Include configuration
+// Include configuration and utility functions
 require_once 'config.php';
 
 // Handle AJAX requests
@@ -22,11 +22,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         default:
             echo json_encode(['error' => 'Invalid action']);
     }
+    exit;
 }
 
 // Handle streaming downloads
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'stream') {
     streamDownload($_GET['url'], $_GET['format'], $_GET['type']);
+    exit;
 }
 
 function getVideoInfo($url) {
@@ -34,36 +36,24 @@ function getVideoInfo($url) {
         echo json_encode(['error' => 'Invalid URL']);
         return;
     }
-    
-    // Escape URL for shell command
     $escapedUrl = escapeshellarg($url);
-    
-    // Build yt-dlp command with cookies if available
     $command = YT_DLP_PATH . " --dump-json";
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
         $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
         $command .= " --cookies $escapedCookies";
     }
     $command .= " $escapedUrl 2>&1";
-    
     $output = shell_exec($command);
-    
-    if (strpos($output, 'ERROR') !== false) {
+    if (strpos($output, 'ERROR') !== false || !$output) {
         echo json_encode(['error' => 'Failed to fetch video info: ' . $output]);
         return;
     }
-    
-    // Parse JSON output
     $videoData = json_decode($output, true);
     if (!$videoData) {
         echo json_encode(['error' => 'Failed to parse video information']);
         return;
     }
-    
-    // Get available formats
     $formats = getFormatsFromVideoData($videoData);
-    
-    // Prepare response
     $response = [
         'title' => $videoData['title'] ?? 'Unknown',
         'duration' => formatDuration($videoData['duration'] ?? 0),
@@ -71,13 +61,11 @@ function getVideoInfo($url) {
         'view_count' => number_format($videoData['view_count'] ?? 0),
         'formats' => $formats
     ];
-    
     echo json_encode($response);
 }
 
 function getFormatsFromVideoData($videoData) {
     $formats = [];
-    
     if (isset($videoData['formats'])) {
         foreach ($videoData['formats'] as $format) {
             $formats[] = [
@@ -92,24 +80,20 @@ function getFormatsFromVideoData($videoData) {
             ];
         }
     }
-    
     // Sort formats by resolution (highest first)
     usort($formats, function($a, $b) {
         $resA = intval(preg_replace('/[^0-9]/', '', $a['resolution']));
         $resB = intval(preg_replace('/[^0-9]/', '', $b['resolution']));
         return $resB - $resA;
     });
-    
     return $formats;
 }
 
 function formatDuration($seconds) {
     if ($seconds == 0) return 'Unknown';
-    
     $hours = floor($seconds / 3600);
     $minutes = floor(($seconds % 3600) / 60);
     $secs = $seconds % 60;
-    
     if ($hours > 0) {
         return sprintf('%02d:%02d:%02d', $hours, $minutes, $secs);
     } else {
@@ -122,40 +106,29 @@ function getAvailableFormats($url) {
         echo json_encode(['error' => 'Invalid URL']);
         return;
     }
-    
-    // Escape URL for shell command
     $escapedUrl = escapeshellarg($url);
-    
-    // Build yt-dlp command with cookies if available
     $command = YT_DLP_PATH . " --list-formats";
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
         $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
         $command .= " --cookies $escapedCookies";
     }
     $command .= " $escapedUrl 2>&1";
-    
     $output = shell_exec($command);
-    
-    if (strpos($output, 'ERROR') !== false) {
+    if (strpos($output, 'ERROR') !== false || !$output) {
         echo json_encode(['error' => 'Failed to fetch formats: ' . $output]);
         return;
     }
-    
     $formats = [];
     $lines = explode("\n", $output);
-    
     foreach ($lines as $line) {
         $line = trim($line);
         if (empty($line) || strpos($line, 'ID') !== false) continue;
-        
-        // Parse format line
         if (preg_match('/^(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/', $line, $matches)) {
             $formatId = $matches[1];
             $extension = $matches[2];
             $resolution = $matches[3];
             $fps = $matches[4];
             $description = trim($matches[5]);
-            
             $formats[] = [
                 'id' => $formatId,
                 'extension' => $extension,
@@ -166,14 +139,11 @@ function getAvailableFormats($url) {
             ];
         }
     }
-    
-    // Sort formats by resolution (highest first)
     usort($formats, function($a, $b) {
         $resA = intval(preg_replace('/[^0-9]/', '', $a['resolution']));
         $resB = intval(preg_replace('/[^0-9]/', '', $b['resolution']));
         return $resB - $resA;
     });
-    
     echo json_encode(['formats' => $formats]);
 }
 
@@ -183,31 +153,20 @@ function streamDownload($url, $format, $type) {
         echo 'Invalid URL';
         return;
     }
-    
-    // Escape parameters for shell command
     $escapedUrl = escapeshellarg($url);
     $escapedFormat = escapeshellarg($format);
-    
-    // Determine output format based on type
     $outputFormat = ($type === 'audio') ? 'mp3' : 'mp4';
-    
-    // Build yt-dlp command for streaming with cookies if available
     $command = YT_DLP_PATH . " --format $escapedFormat --output -";
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
         $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
         $command .= " --cookies $escapedCookies";
     }
     $command .= " $escapedUrl";
-    
-    // Set headers for streaming
     header('Content-Type: application/octet-stream');
     header('Content-Disposition: attachment; filename="download.' . $outputFormat . '"');
     header('Cache-Control: no-cache, must-revalidate');
     header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-    
-    // Execute command and stream output directly to browser
     $handle = popen($command, 'r');
-    
     if ($handle) {
         while (!feof($handle)) {
             $buffer = fread($handle, 8192);
@@ -226,51 +185,36 @@ function downloadVideo($url, $format) {
         echo json_encode(['error' => 'Invalid URL']);
         return;
     }
-    
-    // Sanitize filename
     $filename = preg_replace('/[^a-zA-Z0-9_-]/', '_', parse_url($url, PHP_URL_HOST));
     $outputPath = DOWNLOAD_DIR . $filename . '_%(title)s.%(ext)s';
-    
-    // Escape parameters for shell command
     $escapedFormat = escapeshellarg($format);
     $escapedOutput = escapeshellarg($outputPath);
     $escapedUrl = escapeshellarg($url);
-    
-    // Build yt-dlp command with progress and cookies if available
     $command = YT_DLP_PATH . " --format $escapedFormat --output $escapedOutput --newline";
     if (USE_COOKIES && file_exists(YT_DLP_COOKIES)) {
         $escapedCookies = escapeshellarg(YT_DLP_COOKIES);
         $command .= " --cookies $escapedCookies";
     }
     $command .= " $escapedUrl 2>&1";
-    
-    // Execute command and capture output
     $output = [];
     $returnCode = 0;
-    
     exec($command, $output, $returnCode);
-    
     if ($returnCode !== 0) {
         echo json_encode(['error' => 'Download failed: ' . implode("\n", $output)]);
         return;
     }
-    
-    // Find downloaded file
     $files = glob(DOWNLOAD_DIR . '*');
     $latestFile = null;
     $latestTime = 0;
-    
     foreach ($files as $file) {
         if (is_file($file) && filemtime($file) > $latestTime) {
             $latestTime = filemtime($file);
             $latestFile = $file;
         }
     }
-    
     if ($latestFile) {
         $fileSize = filesize($latestFile);
         $fileName = basename($latestFile);
-        
         echo json_encode([
             'success' => true,
             'file' => $fileName,
@@ -282,21 +226,10 @@ function downloadVideo($url, $format) {
     }
 }
 
-function formatBytes($bytes, $precision = 2) {
-    $units = array('B', 'KB', 'MB', 'GB', 'TB');
-    
-    for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
-        $bytes /= 1024;
-    }
-    
-    return round($bytes, $precision) . ' ' . $units[$i];
-}
-
 // Handle direct file download
 if (isset($_GET['file'])) {
     $file = $_GET['file'];
     $filePath = DOWNLOAD_DIR . basename($file);
-    
     if (file_exists($filePath) && is_file($filePath)) {
         header('Content-Type: application/octet-stream');
         header('Content-Disposition: attachment; filename="' . basename($filePath) . '"');
