@@ -54,7 +54,7 @@ The script will automatically:
 
 **Default Admin Credentials:**
 - Username: `senzore`
-- Password: `DeIr48ToCfKKJwp`
+- Password: `Id say nuh uh` ( Nah i decided to hide this :v )
 
 **Admin Panel Features:**
 - Server status monitoring (CPU, RAM, Disk, Services)
