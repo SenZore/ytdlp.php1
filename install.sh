@@ -1,77 +1,76 @@
 #!/bin/bash
 
-# YT-DLP PHP Web Interface Installation Script (for use with sudo su)
-# Run this as root (sudo su), do NOT use sudo inside this script
+# YT-DLP PHP Web Interface All-in-One Installer for Ubuntu 24.04
+# Run as root (sudo su), do NOT use sudo inside this script
 
-echo "🚀 Installing YT-DLP PHP Web Interface..."
+set -e
 
-# Prompt for domain and admin email at the very top
+# --- 1. Prompt for domain and admin email ---
+echo "🚀 YT-DLP PHP Web Interface Installer"
 read -p "Enter the URL (domain) where the website will be hosted (e.g., example.com): " DOMAIN_NAME
 read -p "Enter admin email for SSL: " ADMIN_EMAIL
 
-# Show detected server public IP
+# --- 2. Show server public IP and check DNS ---
 SERVER_IP=$(curl -s https://api.ipify.org)
 echo "Detected server public IP: $SERVER_IP"
-
-# Check if domain resolves to this server's public IP
 DOMAIN_IP=$(dig +short $DOMAIN_NAME | tail -n1)
-
 if [[ -z "$DOMAIN_IP" ]]; then
   echo "❌ ERROR: Your domain ($DOMAIN_NAME) does not resolve to any IP address."
-  echo "    Please update your DNS A record and try again."
   exit 1
 fi
-
 if [[ "$SERVER_IP" != "$DOMAIN_IP" ]]; then
   echo "❌ ERROR: Your domain ($DOMAIN_NAME) does not point to this server's IP ($SERVER_IP)."
   echo "    Domain resolves to: $DOMAIN_IP"
-  echo "    Please update your DNS A record and try again."
   exit 1
 else
   echo "✅ Domain $DOMAIN_NAME resolves correctly to this server ($SERVER_IP)."
 fi
 
-echo "Proceeding to SSL verification and installation..."
+# --- 3. Remove any limit_req_zone from all site configs ---
+SITE_CONFIGS=(/etc/nginx/sites-available/* /etc/nginx/sites-enabled/*)
+for f in "${SITE_CONFIGS[@]}"; do
+  if [ -f "$f" ]; then
+    if grep -q 'limit_req_zone' "$f"; then
+      echo "[INFO] Removing all limit_req_zone lines from $f"
+      sed -i '/limit_req_zone/d' "$f"
+    fi
+  fi
+done
 
-# Update system
+# --- 4. Ensure limit_req_zone is only in http block of nginx.conf ---
+NGINX_CONF="/etc/nginx/nginx.conf"
+LIMIT_DIRECTIVE='limit_req_zone $binary_remote_addr zone=download:10m rate=10r/m;'
+if ! grep -q "$LIMIT_DIRECTIVE" "$NGINX_CONF"; then
+  echo "[INFO] Adding limit_req_zone to http block in $NGINX_CONF"
+  awk -v insert="$LIMIT_DIRECTIVE" '/http[ ]*{/ && !x { print; print "    " insert; x=1; next }1' "$NGINX_CONF" > /tmp/nginx.conf.tmp && mv /tmp/nginx.conf.tmp "$NGINX_CONF"
+else
+  echo "[INFO] limit_req_zone already present in $NGINX_CONF"
+fi
+
+# --- 5. Install dependencies ---
 apt update && apt upgrade -y
-
-# Install core tools
 apt install -y software-properties-common lsb-release apt-transport-https ca-certificates
-
-# Add PHP repository for latest PHP
 add-apt-repository ppa:ondrej/php -y
 apt update
-
-# Install PHP and extensions (php8.3-json is not needed)
-apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3
-
-# Install Python, pip, and yt-dlp
-apt install -y python3 python3-pip
+apt install -y nginx php8.3 php8.3-fpm php8.3-curl php8.3-mbstring php8.3-xml php8.3-zip php8.3-gd php8.3-sqlite3 python3 python3-pip ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban
 pip3 install --upgrade yt-dlp
 
-# Install other dependencies
-apt install -y ffmpeg curl wget git unzip certbot python3-certbot-nginx ufw fail2ban
-
-# Check and create Nginx directories if missing
-mkdir -p /etc/nginx/sites-available
-mkdir -p /etc/nginx/sites-enabled
-
-# Create web directory
+# --- 6. Create necessary directories ---
+mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
 mkdir -p /var/www/yt-dlp
 cd /var/www/yt-dlp
+mkdir -p downloads temp logs
 
-# Download project files from SenZore's repository
+# --- 7. Download project files ---
 echo "📥 Downloading project files..."
 wget -qO- https://github.com/SenZore/ytdlp.php1/archive/main.tar.gz | tar -xz --strip-components=1
 
-# Set permissions
+# --- 8. Set permissions ---
 chown -R www-data:www-data /var/www/yt-dlp
 chmod -R 755 /var/www/yt-dlp
-mkdir -p downloads temp logs
 chown -R www-data:www-data downloads temp logs
 
-# Configure PHP
+# --- 9. Configure PHP ---
 PHP_INI="/etc/php/8.3/fpm/php.ini"
 if [ -f "$PHP_INI" ]; then
   sed -i 's/upload_max_filesize = 2M/upload_max_filesize = 2G/' $PHP_INI
@@ -80,11 +79,11 @@ if [ -f "$PHP_INI" ]; then
   sed -i 's/max_execution_time = 30/max_execution_time = 300/' $PHP_INI
 fi
 
-# Configure Nginx
-cat > /etc/nginx/sites-available/yt-dlp << 'EOF'
+# --- 10. Configure Nginx site ---
+cat > /etc/nginx/sites-available/yt-dlp << EOF
 server {
     listen 80;
-    server_name _;
+    server_name $DOMAIN_NAME;
     root /var/www/yt-dlp;
     index index.php index.html;
 
@@ -96,20 +95,18 @@ server {
     add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
 
     # Rate limiting
-    limit_req_zone $binary_remote_addr zone=download:10m rate=10r/m;
     limit_req zone=download burst=20 nodelay;
 
-    # File upload size
     client_max_body_size 2G;
 
     location / {
-        try_files $uri $uri/ /index.php?$query_string;
+        try_files \$uri \$uri/ /index.php?\$query_string;
     }
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/var/run/php/php8.3-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }
 
@@ -139,28 +136,28 @@ server {
 }
 EOF
 
-# Enable site
-ln -sf /etc/nginx/sites-available/yt-dlp /etc/nginx/sites-enabled/
+ln -sf /etc/nginx/sites-available/yt-dlp /etc/nginx/sites-enabled/yt-dlp
 rm -f /etc/nginx/sites-enabled/default
 
-# Configure firewall (allow ports manually if Nginx Full profile is missing)
+# --- 11. Configure firewall ---
 ufw --force enable
 ufw allow ssh
 ufw allow 80
 ufw allow 443
 
-# Start and enable services if installed
-for svc in nginx php8.3-fpm fail2ban; do
-  if systemctl list-unit-files | grep -q "${svc}.service"; then
-    systemctl enable $svc
-    systemctl restart $svc
-  else
-    echo "[WARNING] $svc.service not found, skipping."
-  fi
-done
+# --- 12. Test and reload Nginx ---
+echo "[INFO] Testing Nginx config..."
+if nginx -t; then
+  echo "[SUCCESS] Nginx config is valid. Reloading nginx..."
+  systemctl restart nginx || systemctl start nginx
+  echo "[DONE] Nginx reloaded successfully."
+else
+  echo "[ERROR] Nginx config test failed. Please check your config manually."
+  exit 1
+fi
 
-# Install SSL certificate if certbot is available
-echo "Verifying SSL setup..."
+# --- 13. SSL with Certbot ---
+echo "[INFO] Verifying SSL setup..."
 if command -v certbot &> /dev/null; then
   certbot --nginx -d $DOMAIN_NAME --email $ADMIN_EMAIL --agree-tos --non-interactive || \
     echo "[WARNING] Certbot failed. You may need to run it manually."
@@ -168,7 +165,7 @@ else
   echo "[WARNING] certbot not found, skipping SSL setup."
 fi
 
-# Create monitoring script
+# --- 14. Create monitoring script ---
 cat > /usr/local/bin/yt-dlp-status.sh << 'EOF'
 #!/bin/bash
 echo "=== YT-DLP Service Status ==="
@@ -179,9 +176,9 @@ echo "Nginx: $(nginx -v 2>&1)"
 echo "Disk Usage: $(df / | awk 'NR==2 {print $5}')"
 echo "Memory Usage: $(free | awk 'NR==2{printf \"%.1f%%\", $3*100/$2}')"
 EOF
-
 chmod +x /usr/local/bin/yt-dlp-status.sh
 
+# --- 15. Final output ---
 echo "✅ Installation completed!"
 echo "🌐 Visit: https://$DOMAIN_NAME"
 echo "🔐 Admin: https://$DOMAIN_NAME/login.php"
