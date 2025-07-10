@@ -273,4 +273,4 @@ Hover over "Made by Senz with Love" in the footer to see a special message! 😊
 
 **Made by Senz with Love** ❤️
 
-*Built with modern web technologies and designed for optimal user experience.* 
+
